@@ -323,10 +323,22 @@ def parse_share_page_html(html: str, page_url: str, original_share: str) -> Douy
     )
 
 
-def resolve_douyin_share(share_text: str) -> DouyinContentMeta:
-    """解析抖音分享链接（视频或图文）。"""
+def resolve_douyin_share(share_text: str, *, use_browser_fallback: bool = True) -> DouyinContentMeta:
+    """解析抖音分享链接（视频或图文）。
+
+    优先用轻量的分享页 SSR 公开数据解析（无需浏览器）；
+    当抖音不再注入 SSR 数据时，自动回退到 Playwright 浏览器解析。
+    """
     session = _session()
     share_url = expand_share_url(share_text)
     fetch_url = normalize_to_share_page(share_url)
-    page_url, html = resolve_share_page(session, fetch_url)
-    return parse_share_page_html(html, page_url, share_url)
+    try:
+        page_url, html = resolve_share_page(session, fetch_url)
+        return parse_share_page_html(html, page_url, share_url)
+    except DouyinResolveError:
+        if not use_browser_fallback:
+            raise
+        # SSR 解析失败：抖音已不再注入公开数据，改用浏览器拦截详情 API
+        from script.browser_resolver import resolve_via_browser
+
+        return resolve_via_browser(share_text)
